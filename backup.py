@@ -3,24 +3,14 @@ import pandas as pd
 import datetime
 import time
 import os
-import io
-import barcode
 from nanoid import generate
 from supabase import create_client
-from barcode.writer import ImageWriter
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
+from numpy.random import default_rng as rng
+from src.barcode_manager import BarcodePDFGenerator
 
 url = st.secrets["supabase"]["url"]
 key = st.secrets["supabase"]["key"]
 supabase = create_client(url, key)
-TABLOID = (792, 1224)  # 11x17 pulgadas en puntos
-CELL_WIDTH = 250
-CELL_HEIGHT = 150
-MARGIN_X = 36
-MARGIN_Y = 36
-COLS = int((TABLOID[0] - 2 * MARGIN_X) // CELL_WIDTH)
-ROWS = int((TABLOID[1] - 2 * MARGIN_Y) // CELL_HEIGHT)
 
 @st.dialog("Imprimir barcode")
 def imprimir_barcode(opciones, barcodes_file):
@@ -40,22 +30,24 @@ def imprimir_barcode(opciones, barcodes_file):
 def insertar_alumno(opciones, grupo_id):
     id_student = generate('0123456789abcdefghijklmnopqrstuvwxyz', 12)
     name_student = st.text_input("Nombre")
+    phone_student = st.text_input("Teléfono")
+    email_student = st.text_input("Email")
     if st.button("Guardar"):
         st.session_state.alumno = {
             "id_alumno": id_student,
             "id_grupo": grupo_id,
-            "nombre_alumno": name_student
+            "nombre_alumno": name_student,
+            "email": email_student,
+            "telefono": phone_student,
         }
         st.session_state["modal"] = None
         st.session_state["accion"] = opciones[0] 
         if "alumno" in st.session_state:
+            #st.success(f"Alumno creado: {st.session_state.alumno}")
             ok, msg, data = insertDataToBD('alumno', st.session_state.alumno)
-            if ok:
-                st.success(
-                    f"✅ Alumno creado correctamente"
-                )
-            else:
-                st.warning(msg)
+            st.success(
+                f"✅ Alumno creado correctamente"
+            )
         time.sleep(1)
         st.rerun()
 
@@ -301,64 +293,6 @@ def sidebarCreateGroup():
             else:
                 st.warning(msg)
 
-def generar_codigos_en_memoria(datos):
-    """Genera códigos de barras como imágenes en memoria y las devuelve como dict"""
-    codigos_imagenes = {}
-    for codigo in datos:
-        barcode_obj = barcode.get('code128', codigo, writer=ImageWriter())
-        buffer = io.BytesIO()
-        barcode_obj.write(buffer)
-        buffer.seek(0)
-        codigos_imagenes[codigo] = buffer
-    return codigos_imagenes
-
-def crear_pdf_en_memoria(datos, codigos_imagenes):
-    """Crea un PDF en memoria usando las imágenes recibidas"""
-    buffer_pdf = io.BytesIO()
-    c = canvas.Canvas(buffer_pdf, pagesize=TABLOID)
-    col = 0
-    row = 0
-
-    for index, (codigo, nombre) in enumerate(datos.items()):
-        barcode_image_buffer = codigos_imagenes[codigo]
-        barcode_image = ImageReader(barcode_image_buffer)
-
-        x = MARGIN_X + col * CELL_WIDTH
-        y = TABLOID[1] - MARGIN_Y - (row + 1) * CELL_HEIGHT
-
-        c.drawImage(
-            barcode_image,
-            x,
-            y + 10,
-            width=CELL_WIDTH - 10,
-            height=CELL_HEIGHT - 20
-        )
-
-        texto = f"{nombre}"
-        c.setFont("Helvetica", 6)
-        text_width = c.stringWidth(texto, "Helvetica", 6)
-        text_x = x + (CELL_WIDTH - text_width) / 2
-        c.drawString(text_x, y, texto)
-
-        col += 1
-        if col >= COLS:
-            col = 0
-            row += 1
-        if row >= ROWS:
-            c.showPage()
-            row = 0
-            col = 0
-
-    c.save()
-    buffer_pdf.seek(0)
-    return buffer_pdf.read()
-
-def generar_pdf_codigos(datos):
-    """Función principal que genera el PDF con códigos de barras"""
-    codigos_imagenes = generar_codigos_en_memoria(datos)
-    pdf_bytes = crear_pdf_en_memoria(datos, codigos_imagenes)
-    return pdf_bytes
-
 def genBarcodePDF():
     ok, msg, data = getDataFromTable('alumno')
     if not ok or not data:
@@ -366,7 +300,8 @@ def genBarcodePDF():
         return
     # Diccionario nombre → id
     datos_alumnos = {a['id_alumno']: a['nombre_alumno'] for a in data}
-    pdf_bytes = generar_pdf_codigos(datos_alumnos)
+    genBarcode = BarcodePDFGenerator()
+    pdf_bytes = genBarcode.ejecutar(datos_alumnos)
     return pdf_bytes
 
 def layout():
