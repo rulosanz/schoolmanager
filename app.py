@@ -22,20 +22,6 @@ MARGIN_Y = 36
 COLS = int((TABLOID[0] - 2 * MARGIN_X) // CELL_WIDTH)
 ROWS = int((TABLOID[1] - 2 * MARGIN_Y) // CELL_HEIGHT)
 
-@st.dialog("Imprimir barcode")
-def imprimir_barcode(opciones, barcodes_file):
-    st.pdf(barcodes_file)
-    # Leer el archivo como bytes
-    with open(barcodes_file, "rb") as f:
-        pdf_bytes = f.read()
-    # Agregar botón para descargar
-    st.download_button(
-        label="📥 Descargar PDF",
-        data=pdf_bytes,
-        file_name="barcodes.pdf",
-        mime="application/pdf"
-    )
-
 @st.dialog("Agregar alumn@")
 def insertar_alumno(opciones, grupo_id):
     id_student = generate('0123456789abcdefghijklmnopqrstuvwxyz', 12)
@@ -63,7 +49,7 @@ def insertar_alumno(opciones, grupo_id):
 def agregar_actividad(opciones, grupo_id):
     activity_type = st.selectbox(
         "Tipo de actividad",
-        ("Examen", "Actividad Libro", "Exposicion", "Trabajo en clase", "Otra"),
+        ("Examen", "Trabajo con rubrica", "Actividad Libro", "Exposicion", "Trabajo en clase", "Otra"),
     )
     name_activity = st.text_input("Nombre de la actividad")
     description_activity = st.text_input("Descripcion")
@@ -104,43 +90,99 @@ def revisar_actividad(opciones, grupo_id):
     if not ok or not data:
         st.error(f"❌ Error al obtener actividades: {msg}")
         return
-
     activity_dict = {a['nombre_actividad']: a['id_actividad'] for a in data}
-
+    aciertos_posibles_dict = {a['id_actividad']: a['aciertos_posibles'] for a in data}
     # Inicializa la variable en session_state si no existe
     if "student_id_input" not in st.session_state:
         st.session_state.student_id_input = ""
 
     with st.form("form_revisar_actividad"):
         selected_name = st.selectbox("Selecciona la actividad", list(activity_dict.keys()))
-        
         # Usamos st.session_state.student_id_input como valor y key para sincronizar
         student_id = st.text_input(
             "Código del estudiante (escaneado o manual)",
             value=st.session_state.student_id_input,
             key="student_id_input"
         )
-
+        
         submit = st.form_submit_button("Guardar revisión")
 
         if submit:
             if not student_id.strip():
                 st.warning("⚠️ Ingresa un código de estudiante válido.")
             else:
+                aciertos_obtenidos = aciertos_posibles_dict[activity_dict[selected_name]]
+                calif = 10
                 st.session_state.revision = {
                     "id_actividad": activity_dict[selected_name],
                     "id_alumno": student_id.strip(),
                     "entregado": True,
-                    "aciertos_obtenidos": 1,
-                    "calificacion": 10,
+                    "aciertos_obtenidos": aciertos_obtenidos,
+                    "calificacion": calif,
                     "fecha": datetime.datetime.now().isoformat()
                 }
 
                 st.session_state["accion"] = opciones[0]
-                ok, msg, data = insertDataToBD('revision', st.session_state.revision)
+                ok, msg, data = getDataFromTable('revision', filters={"id_alumno": student_id.strip()})
+                if ok == False:
+                    ok, msg, data = insertDataToBD('revision', st.session_state.revision)
+                    if ok:
+                        st.success(ok)
+                        st.success(msg)
+                        st.success(data)
+                        # Limpiar el input sin cerrar diálogo
+                        st.session_state.student_id_input = ""
+                        st.experimental_rerun()  # Para que la UI se refresque y el input se limpie
+                    else:
+                        st.warning(msg)
+                else:
+                    st.warning(f'Ya fue revisada esta actividad para {student_id.strip()}')
+
+@st.dialog("Calificar actividad")
+def calificar_actividad(opciones, grupo_id):
+    ok, msg, data = getDataFromTable('actividad', filters={"id_grupo": grupo_id})
+    if not ok or not data:
+        st.error(f"❌ Error al obtener actividades: {msg}")
+        return
+    activity_dict = {a['nombre_actividad']: a['id_actividad'] for a in data}
+    aciertos_posibles_dict = {a['id_actividad']: a['aciertos_posibles'] for a in data}
+    # Inicializa la variable en session_state si no existe
+    if "student_id_input" not in st.session_state:
+        st.session_state.student_id_input = ""
+
+    with st.form("form_revisar_actividad"):
+        selected_name = st.selectbox("Selecciona la actividad", list(activity_dict.keys()))
+        # Usamos st.session_state.student_id_input como valor y key para sincronizar
+        aciertos_obtenidos = st.text_input('Aciertos Obtenidos')
+        student_id = st.text_input(
+            "Código del estudiante (escaneado o manual)",
+            value=st.session_state.student_id_input,
+            key="student_id_input"
+        )
+        
+        submit = st.form_submit_button("Guardar revisión")
+
+        if submit:
+            if not student_id.strip():
+                st.warning("⚠️ Ingresa un código de estudiante válido.")
+            else:
+                #calif = (aciertos_obtenidos / aciertos_posibles_dict[activity_dict[selected_name]]) * 10
+                calif = 0
+                st.session_state.revision = {
+                    "id_actividad": activity_dict[selected_name],
+                    "id_alumno": student_id.strip(),
+                    "entregado": True,
+                    "aciertos_obtenidos": aciertos_obtenidos,
+                    "calificacion": calif,
+                    "fecha": datetime.datetime.now().isoformat()
+                }
+
+                st.session_state["accion"] = opciones[0]
+                ok, msg, data = getDataFromTable('revision', filters={"id_alumno": student_id})
+                #ok, msg, data = insertDataToBD('revision', st.session_state.revision)
 
                 if ok:
-                    st.success(msg)
+                    st.success(data)
                     # Limpiar el input sin cerrar diálogo
                     st.session_state.student_id_input = ""
                     st.experimental_rerun()  # Para que la UI se refresque y el input se limpie
@@ -172,6 +214,18 @@ def getDataFromTable(tableName, filters=None):
         return False, f"Excepción al consultar: {e}", None
 
 def insertDataToBD(tableName, registro):
+    if not registro:
+        return False, "El registro está vacío", None
+    try:
+        response = supabase.table(tableName).insert(registro).execute()
+        # Revisamos si hubo error
+        if hasattr(response, "error") and response.error:
+            return False, f"Error: {response.error.message}", None
+        return True, "Registro insertado correctamente", response.data
+    except Exception as e:
+        return False, f"Excepción al insertar: {e}", None
+    
+def updateDataInBD(tableName, registro):
     if not registro:
         return False, "El registro está vacío", None
     try:
@@ -390,7 +444,7 @@ def layout():
         # Obtener el id correspondiente
         id_grupo = str(grupo_dict.get(seleccionado, None))
         opcs_grupo = nombres_grupos
-        opciones = ["-- Selecciona --", "Agregar alumn@", "Crear actividad", "Revisar actividad", "Imprimir codigos de barras"]
+        opciones = ["-- Selecciona --", "Agregar alumn@", "Crear actividad", "Revisar actividad", "Calificar actividad"]
         # --- Selector principal ---
         opcion = st.selectbox(
             "¿Qué deseas hacer?",
@@ -408,20 +462,8 @@ def layout():
             agregar_actividad(opciones, id_grupo)
         elif st.session_state.get("modal") == "Revisar actividad":
             revisar_actividad(opciones, id_grupo)
-        elif st.session_state.get("modal") == "Imprimir codigos de barras":      
-            barcodes_file = os.path.join(os.path.join(os.getcwd(), 'src', 'codigos_estadistica.pdf'))    
-            if os.path.exists(barcodes_file):
-                pass
-            else:
-                ok, msg, data = getDataFromTable('alumno')
-                if not ok or not data:
-                    st.error(f"❌ Error al obtener actividades: {msg}")
-                    return
-                # Diccionario nombre → id
-                datos_alumnos = {a['id_alumno']: a['nombre_alumno'] for a in data}
-                genBarcode = BarcodePDFGenerator()
-                genBarcode.ejecutar(datos_alumnos)
-            imprimir_barcode(opciones, barcodes_file)
+        elif st.session_state.get("modal") == "Calificar actividad":
+            calificar_actividad(opciones, id_grupo)
         if id_grupo is not None:
             renderDataframe(int(id_grupo))
         else:
