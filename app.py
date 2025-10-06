@@ -90,21 +90,31 @@ def revisar_actividad(opciones, grupo_id):
     if not ok or not data:
         st.error(f"❌ Error al obtener actividades: {msg}")
         return
+
     activity_dict = {a['nombre_actividad']: a['id_actividad'] for a in data}
     aciertos_posibles_dict = {a['id_actividad']: a['aciertos_posibles'] for a in data}
-    # Inicializa la variable en session_state si no existe
+
+    # Inicializar estados si no existen
     if "student_id_input" not in st.session_state:
         st.session_state.student_id_input = ""
+    if "reset_input" not in st.session_state:
+        st.session_state.reset_input = False
+
+    # Limpiar el input si fue solicitado anteriormente
+    if st.session_state.reset_input:
+        st.session_state.student_id_input = ""
+        st.session_state.reset_input = False
 
     with st.form("form_revisar_actividad"):
         selected_name = st.selectbox("Selecciona la actividad", list(activity_dict.keys()))
-        # Usamos st.session_state.student_id_input como valor y key para sincronizar
+
+        # El valor se toma de session_state pero respetando si se reinició
         student_id = st.text_input(
             "Código del estudiante (escaneado o manual)",
             value=st.session_state.student_id_input,
             key="student_id_input"
         )
-        
+
         submit = st.form_submit_button("Guardar revisión")
 
         if submit:
@@ -112,7 +122,8 @@ def revisar_actividad(opciones, grupo_id):
                 st.warning("⚠️ Ingresa un código de estudiante válido.")
             else:
                 aciertos_obtenidos = aciertos_posibles_dict[activity_dict[selected_name]]
-                calif = 10
+                calif = 10  # Aquí puedes calcular la calificación real si lo deseas
+
                 st.session_state.revision = {
                     "id_actividad": activity_dict[selected_name],
                     "id_alumno": student_id.strip(),
@@ -123,20 +134,28 @@ def revisar_actividad(opciones, grupo_id):
                 }
 
                 st.session_state["accion"] = opciones[0]
+
                 ok, msg, data = getDataFromTable('revision', filters={"id_alumno": student_id.strip()})
-                if ok == False:
+                ya_revisado = False
+
+                if data:
+                    for elemento in data:
+                        if elemento['id_actividad'] == activity_dict[selected_name]:
+                            ya_revisado = True
+                            break
+
+                if ya_revisado:
+                    st.warning(f'Ya fue revisada la actividad {selected_name} para {student_id.strip()}')
+                else:
                     ok, msg, data = insertDataToBD('revision', st.session_state.revision)
                     if ok:
-                        st.success(ok)
-                        st.success(msg)
-                        st.success(data)
-                        # Limpiar el input sin cerrar diálogo
-                        st.session_state.student_id_input = ""
-                        st.experimental_rerun()  # Para que la UI se refresque y el input se limpie
+                        # Solicitar que se limpie el input en el próximo render
+                        st.success(f'Actividad {selected_name} revisada correctamente a {student_id.strip()}')
+                        time.sleep(1)
+                        st.session_state.reset_input = True
+                        st.rerun()
                     else:
-                        st.warning(msg)
-                else:
-                    st.warning(f'Ya fue revisada esta actividad para {student_id.strip()}')
+                        st.warning(msg)                    
 
 @st.dialog("Calificar actividad")
 def calificar_actividad(opciones, grupo_id):
