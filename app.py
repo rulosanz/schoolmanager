@@ -197,14 +197,21 @@ def calificar_actividad(opciones, grupo_id):
                 }
 
                 st.session_state["accion"] = opciones[0]
-                ok, msg, data = getDataFromTable('revision', filters={"id_alumno": student_id})
-                #ok, msg, data = insertDataToBD('revision', st.session_state.revision)
-
-                if ok:
-                    st.success(data)
-                    # Limpiar el input sin cerrar diálogo
-                    st.session_state.student_id_input = ""
-                    st.experimental_rerun()  # Para que la UI se refresque y el input se limpie
+                ok, msg, data = getDataFromTable('revision', filters={"id_alumno": student_id, "id_actividad": activity_dict[selected_name]})
+                ok_actividad, msg_actividad, data_actividad = getDataFromTable('actividad', filters={"id_actividad": activity_dict[selected_name]})
+                if ok and data:
+                    registro_actual = data[0]  
+                    # Modificamos solo el campo calificacion
+                    registro_actual['aciertos_obtenidos'] = aciertos_obtenidos  # nuevo valor que quieres poner
+                    registro_actual['calificacion'] = (int(aciertos_obtenidos) / int(data_actividad[0]['aciertos_posibles'])) * 10
+                    ok_update, msg_update, data_update = updateDataInBD("revision", registro_actual, "id_revision", registro_actual['id_revision'])
+                    if ok_update:
+                        st.success(data)
+                        # Limpiar el input sin cerrar diálogo
+                        st.session_state.student_id_input = ""
+                        st.experimental_rerun()  # Para que la UI se refresque y el input se limpie
+                    else:
+                        st.warning(msg)
                 else:
                     st.warning(msg)
 
@@ -244,17 +251,27 @@ def insertDataToBD(tableName, registro):
     except Exception as e:
         return False, f"Excepción al insertar: {e}", None
     
-def updateDataInBD(tableName, registro):
+def updateDataInBD(tableName, registro, filtro_campo, filtro_valor):
+    """
+    Actualiza un registro en la tabla `tableName`.
+    `registro` es el diccionario con los datos completos para actualizar.
+    `filtro_campo` y `filtro_valor` se usan para filtrar qué fila actualizar.
+    """
     if not registro:
         return False, "El registro está vacío", None
     try:
-        response = supabase.table(tableName).insert(registro).execute()
-        # Revisamos si hubo error
+        response = (
+            supabase
+            .table(tableName)
+            .update(registro)
+            .eq(filtro_campo, filtro_valor)
+            .execute()
+        )
         if hasattr(response, "error") and response.error:
             return False, f"Error: {response.error.message}", None
-        return True, "Registro insertado correctamente", response.data
+        return True, "Registro actualizado correctamente", response.data
     except Exception as e:
-        return False, f"Excepción al insertar: {e}", None
+        return False, f"Excepción al actualizar: {e}", None
 
 def test_connection():
     try:
