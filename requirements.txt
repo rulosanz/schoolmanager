@@ -127,6 +127,7 @@ soupsieve==2.7
 stack-data==0.6.3
 storage3==2.19.0
 streamlit==1.49.1
+streamlit-js-eval==0.1.7
 streamlit-pdf==1.0.7
 StrEnum==0.4.15
 supabase==2.19.0
