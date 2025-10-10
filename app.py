@@ -85,7 +85,7 @@ def agregar_actividad(opciones, grupo_id):
         st.rerun()
 
 @st.dialog("Revisar actividad")
-def revisar_actividad(opciones, grupo_id):
+def revisar_actividad_original(opciones, grupo_id):
     ok, msg, data = getDataFromTable('actividad', filters={"id_grupo": grupo_id})
     if not ok or not data:
         st.error(f"❌ Error al obtener actividades: {msg}")
@@ -157,6 +157,87 @@ def revisar_actividad(opciones, grupo_id):
                     else:
                         st.warning(msg)                    
 
+@st.dialog("Revisar actividad")
+def revisar_actividad(opciones, grupo_id):
+    ok, msg, data = getDataFromTable('actividad', filters={"id_grupo": grupo_id})
+    if not ok or not data:
+        st.error(f"❌ Error al obtener actividades: {msg}")
+        return
+
+    activity_dict = {a['nombre_actividad']: a['id_actividad'] for a in data}
+    aciertos_posibles_dict = {a['id_actividad']: a['aciertos_posibles'] for a in data}
+
+    # Inicializar estados si no existen
+    if "student_id_input" not in st.session_state:
+        st.session_state.student_id_input = ""
+    if "reset_input" not in st.session_state:
+        st.session_state.reset_input = False
+
+    # Limpiar el input si fue solicitado anteriormente
+    if st.session_state.reset_input:
+        st.session_state.student_id_input = ""
+        st.session_state.reset_input = False
+
+    with st.form("form_revisar_actividad"):
+        selected_names = st.multiselect(
+            "Selecciona la actividad",
+            list(activity_dict.keys()),
+            accept_new_options=True,
+        )
+
+        # El valor se toma de session_state pero respetando si se reinició
+        student_id = st.text_input(
+            "Código del estudiante (escaneado o manual)",
+            value=st.session_state.student_id_input,
+            key="student_id_input"
+        )
+
+        submit = st.form_submit_button("Guardar revisión")
+
+        if submit:
+            if not student_id.strip():
+                st.warning("⚠️ Ingresa un código de estudiante válido.")
+            else:
+                st.session_state.revision = []
+                ok, msg, data = getDataFromTable('revision', filters={"id_alumno": student_id.strip()})
+                revisados = []
+                tmp_dict = {
+                        "id_actividad": '',
+                        "id_alumno": student_id.strip(),
+                        "entregado": True,
+                        "aciertos_obtenidos": 0,
+                        "calificacion": 10,
+                        "fecha": datetime.datetime.now().isoformat()
+                    }
+                for name in selected_names:
+                    aciertos_obtenidos = aciertos_posibles_dict[activity_dict[name]]
+                    tmp_dict["id_actividad"] = activity_dict[name]
+                    tmp_dict["aciertos_obtenidos"] = aciertos_obtenidos
+                    if data:
+                        for elemento in data:
+                            if elemento['id_actividad'] == activity_dict[name]:
+                                revisados.append(name)
+                                break
+                            else:
+                                st.session_state.revision.append(tmp_dict.copy())
+                    else:
+                        st.session_state.revision.append(tmp_dict.copy())
+                st.session_state["accion"] = opciones[0]
+                if len(revisados) == len(selected_names) and len(revisados) > 0:
+                    st.warning(f'Ya fue revisadas todas las actividades seleccionadas para {student_id.strip()}')
+                elif len(revisados) > 0:
+                    st.warning(f'Ya fue revisadas las actividades {", ".join(revisados)} para {student_id.strip()}')
+                elif len(st.session_state.revision) > 0:
+                    ok, msg, data = insertDataToBD('revision', st.session_state.revision)
+                    if ok:
+                        # Solicitar que se limpie el input en el próximo render
+                        st.success(f'Actividades {", ".join([n for n in selected_names if n not in revisados])} revisadas correctamente a {student_id.strip()}')
+                        time.sleep(1)
+                        st.session_state.reset_input = True
+                        st.rerun()
+                    else:
+                        st.warning(msg)
+                                   
 @st.dialog("Calificar actividad")
 def calificar_actividad(opciones, grupo_id):
     ok, msg, data = getDataFromTable('actividad', filters={"id_grupo": grupo_id})
