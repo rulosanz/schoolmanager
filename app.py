@@ -540,8 +540,19 @@ def genBarcodePDF():
     pdf_bytes = generar_pdf_codigos(datos_alumnos)
     return pdf_bytes
 
+def login(email, password):
+    try:
+        # Usar el método correcto para iniciar sesión
+        user = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        return user
+    except Exception as e:
+        st.error(f"Error al iniciar sesión: {str(e)}")
+        return None
+
 def layout():
-    st.title("")
     st.sidebar.title("Opciones")
     with st.sidebar.expander("Crear grupo"):
         sidebarCreateGroup()
@@ -587,4 +598,27 @@ def layout():
             st.warning('No hay datos')
         
 if __name__ == "__main__":
-    layout()
+    st.title("School Manager")
+
+    # Inicializar variable en session_state para controlar si está logueado
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+
+    if not st.session_state.logged_in:
+        email = st.text_input("Correo electrónico")
+        password = st.text_input("Contraseña", type="password")
+
+        if st.button("Iniciar sesión"):
+            if email and password:
+                user = login(email, password)
+                if user:
+                    st.success("Inicio de sesión exitoso")
+                    st.session_state.logged_in = True
+                    st.rerun()  # Forzar recarga para mostrar el layout
+                else:
+                    st.error("Credenciales incorrectas")
+            else:
+                st.error("Por favor, ingresa tu correo y contraseña")
+    else:
+        # Mostrar layout tras login
+        layout()
