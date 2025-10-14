@@ -15,11 +15,11 @@ url = st.secrets["supabase"]["url"]
 key = st.secrets["supabase"]["key"]
 supabase = create_client(url, key)
 TABLOID = (792, 1224)  # 11x17 pulgadas en puntos
-CELL_WIDTH = 250
+CELL_WIDTH = 180
 CELL_HEIGHT = 150
 MARGIN_X = 36
 MARGIN_Y = 36
-COLS = int((TABLOID[0] - 2 * MARGIN_X) // CELL_WIDTH)
+COLS = int((TABLOID[0] - 2 * MARGIN_X) // CELL_WIDTH)  # Será 4
 ROWS = int((TABLOID[1] - 2 * MARGIN_Y) // CELL_HEIGHT)
 
 @st.dialog("Agregar alumn@")
@@ -44,6 +44,68 @@ def insertar_alumno(opciones, grupo_id):
                 st.warning(msg)
         time.sleep(1)
         st.rerun()
+
+@st.dialog("Agregar alumn@s masivo")
+def insertar_alumnos_masivo(opciones, grupo_id):
+    uploaded_files = st.file_uploader(
+        "Sube uno o más archivos Excel", accept_multiple_files=True, type="xlsx"
+    )
+
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            xls = pd.ExcelFile(uploaded_file)
+
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name)
+                key = f"{uploaded_file.name} - {sheet_name}"
+
+                st.markdown(f"### 📄 Hoja: `{sheet_name}` del archivo `{uploaded_file.name}`")
+                st.dataframe(df)
+
+                boton_id = f"importar_{uploaded_file.name}_{sheet_name}"
+                if st.button(f"📥 Importar hoja: {sheet_name}", key=boton_id):
+                    total_filas = len(df)
+                    if total_filas == 0:
+                        st.warning(f"La hoja '{sheet_name}' está vacía.")
+                        continue
+
+                    alumnos_insertados = []
+
+                    progress_text = f"Iniciando inserción de alumnos de '{sheet_name}' al grupo {grupo_id}..."
+                    my_bar = st.progress(0, text=progress_text)
+
+                    for i, fila in df.iterrows():
+                        time.sleep(0.5)  # Simula procesamiento
+
+                        nombre_alumno = fila["Nombre"] if "Nombre" in fila else "Desconocido"
+
+                        # Aquí podrías insertar el alumno en la BD:
+                        st.session_state.alumno = {
+                            "id_alumno": generate("0123456789abcdefghijklmnopqrstuvwxyz", 12),
+                            "id_grupo": grupo_id,
+                            "nombre_alumno": nombre_alumno
+                        }
+                        if "alumno" in st.session_state:
+                            ok, msg, data = insertDataToBD('alumno', st.session_state.alumno)
+                            if ok:
+                                progress_text = f"Insertando alumno {nombre_alumno} al grupo {grupo_id}..."
+                                progreso = int(((i + 1) / total_filas) * 100)
+                                my_bar.progress(progreso, text=progress_text)
+                            else:
+                                progress_text = f"Error al insertar alumno {nombre_alumno} al grupo {grupo_id}..."
+                                progreso = int(((i + 1) / total_filas) * 100)
+                                my_bar.progress(progreso, text=progress_text)
+                    my_bar.empty()
+                    st.success(f"✅ Hoja '{sheet_name}' importada correctamente al grupo {grupo_id}.")
+
+                    # Guardar en sesión (opcional, según uso posterior)
+                    st.session_state["accion"] = opciones[0]
+                    st.session_state["alumnos_masivos"] = alumnos_insertados
+                    st.session_state["modal"] = None
+
+                    # Esperar para mostrar mensaje final
+                    time.sleep(1)
+                    st.rerun()
 
 @st.dialog("Crear actividad")
 def agregar_actividad(opciones, grupo_id):
@@ -540,6 +602,9 @@ def genBarcodePDF():
     pdf_bytes = generar_pdf_codigos(datos_alumnos)
     return pdf_bytes
 
+def importAlumnos():
+    pass
+
 def login(email, password):
     try:
         # Usar el método correcto para iniciar sesión
@@ -572,7 +637,7 @@ def layout():
         # Obtener el id correspondiente
         id_grupo = str(grupo_dict.get(seleccionado, None))
         opcs_grupo = nombres_grupos
-        opciones = ["-- Selecciona --", "Agregar alumn@", "Crear actividad", "Revisar actividad", "Calificar actividad"]
+        opciones = ["-- Selecciona --", "Agregar alumn@", "Agregar alumn@s masivo", "Crear actividad", "Revisar actividad", "Calificar actividad"]
         # --- Selector principal ---
         opcion = st.selectbox(
             "¿Qué deseas hacer?",
@@ -586,6 +651,8 @@ def layout():
         # Abrimos el modal correspondiente
         if st.session_state.get("modal") == "Agregar alumn@":
             insertar_alumno(opciones, id_grupo)
+        elif st.session_state.get("modal") == "Agregar alumn@s masivo":
+            insertar_alumnos_masivo(opciones, id_grupo)
         elif st.session_state.get("modal") == "Crear actividad":
             agregar_actividad(opciones, id_grupo)
         elif st.session_state.get("modal") == "Revisar actividad":
@@ -597,9 +664,7 @@ def layout():
         else:
             st.warning('No hay datos')
         
-if __name__ == "__main__":
-    st.title("School Manager")
-
+def loginManager():
     # Inicializar variable en session_state para controlar si está logueado
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
@@ -621,4 +686,8 @@ if __name__ == "__main__":
                 st.error("Por favor, ingresa tu correo y contraseña")
     else:
         # Mostrar layout tras login
-        layout()
+        pass
+
+if __name__ == "__main__":
+    st.title("School Manager")
+    layout()
