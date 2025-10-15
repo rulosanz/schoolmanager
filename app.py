@@ -24,7 +24,7 @@ ROWS = int((TABLOID[1] - 2 * MARGIN_Y) // CELL_HEIGHT)
 
 @st.dialog("Agregar alumn@")
 def insertar_alumno(opciones, grupo_id):
-    id_student = generate('0123456789abcdefghijklmnopqrstuvwxyz', 12)
+    id_student = st.text_input("Matrícula")
     name_student = st.text_input("Nombre")
     if st.button("Guardar"):
         st.session_state.alumno = {
@@ -81,7 +81,7 @@ def insertar_alumnos_masivo(opciones, grupo_id):
 
                         # Aquí podrías insertar el alumno en la BD:
                         st.session_state.alumno = {
-                            "id_alumno": generate("0123456789abcdefghijklmnopqrstuvwxyz", 12),
+                            "id_alumno": fila['Matrícula'] if 'Matrícula' in fila else generate('0123456789abcdefghijklmnopqrstuvwxyz', 12),
                             "id_grupo": grupo_id,
                             "nombre_alumno": nombre_alumno
                         }
