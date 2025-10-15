@@ -16,7 +16,7 @@ key = st.secrets["supabase"]["key"]
 supabase = create_client(url, key)
 TABLOID = (792, 1224)  # 11x17 pulgadas en puntos
 CELL_WIDTH = 180
-CELL_HEIGHT = 150
+CELL_HEIGHT = 120
 MARGIN_X = 36
 MARGIN_Y = 36
 COLS = int((TABLOID[0] - 2 * MARGIN_X) // CELL_WIDTH)  # Será 4
@@ -556,23 +556,33 @@ def crear_pdf_en_memoria(datos, codigos_imagenes):
         barcode_image_buffer = codigos_imagenes[codigo]
         barcode_image = ImageReader(barcode_image_buffer)
 
+        # Coordenadas base de la celda
         x = MARGIN_X + col * CELL_WIDTH
         y = TABLOID[1] - MARGIN_Y - (row + 1) * CELL_HEIGHT
 
+        # 🔲 Dibujar el contorno (grid)
+        c.setLineWidth(0.3)  # grosor del borde
+        c.setStrokeColorRGB(0.8, 0.8, 0.8)  # gris claro
+        c.rect(x, y, CELL_WIDTH, CELL_HEIGHT, stroke=1, fill=0)
+
+        # 🖼️ Dibujar imagen centrada verticalmente (dejando poco espacio al texto)
         c.drawImage(
             barcode_image,
-            x,
-            y + 10,
+            x + 5,                # margen izquierdo
+            y + 6,                # un poco más arriba para dejar espacio al texto
             width=CELL_WIDTH - 10,
-            height=CELL_HEIGHT - 20
+            height=CELL_HEIGHT - 16
         )
 
+        # 🏷️ Dibujar texto centrado horizontalmente
         texto = f"{nombre}"
         c.setFont("Helvetica", 6)
         text_width = c.stringWidth(texto, "Helvetica", 6)
         text_x = x + (CELL_WIDTH - text_width) / 2
-        c.drawString(text_x, y, texto)
+        text_y = y + 3  # 🔽 más cerca de la imagen
+        c.drawString(text_x, text_y, texto)
 
+        # 📄 Control de columnas y filas
         col += 1
         if col >= COLS:
             col = 0
